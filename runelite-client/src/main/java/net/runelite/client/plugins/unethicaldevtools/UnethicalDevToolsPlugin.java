@@ -4,7 +4,10 @@ import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.DialogOption;
+import net.runelite.api.Point;
+import net.runelite.api.events.ConfigButtonClicked;
 import net.runelite.api.events.DialogProcessed;
+import net.runelite.api.events.Draw;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.packets.ClientPacket;
 import net.runelite.api.packets.PacketBufferNode;
@@ -16,14 +19,22 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.ui.overlay.OverlayUtil;
 import net.unethicalite.api.events.MenuAutomated;
 import net.unethicalite.api.events.PacketSent;
 import net.unethicalite.api.events.ServerPacketReceived;
 import net.unethicalite.client.Static;
+import net.unethicalite.client.managers.InputManager;
 
 import javax.inject.Inject;
+import java.awt.AWTException;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.MouseInfo;
+import java.awt.Robot;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @PluginDescriptor(
@@ -57,6 +68,9 @@ public class UnethicalDevToolsPlugin extends Plugin
 
 	@Inject
 	private Client client;
+
+	@Inject
+	private InputManager inputManager;
 
 	@Override
 	public void startUp()
@@ -224,6 +238,76 @@ public class UnethicalDevToolsPlugin extends Plugin
 		if ("staffLevel".equals(e.getKey()))
 		{
 			client.setStaffModLevel(Integer.parseInt(e.getNewValue()));
+		}
+	}
+
+	private static Robot robot;
+	private final Point p = new Point(0, 10);
+	private final Point p2 = new Point(0, 20);
+	static
+	{
+		try
+		{
+			robot = new Robot();
+		}
+		catch (AWTException e)
+		{
+			log.error("", e);
+		}
+	}
+
+	@Subscribe
+	public void onDraw(Draw event)
+	{
+		if (!config.mousePositionOverlay())
+		{
+			return;
+		}
+
+		final Graphics2D graphics = (Graphics2D) event.getGraphics();
+
+		if (graphics != null)
+		{
+			final int lastMoveX = inputManager.getLastMoveX();
+			final int lastMoveY = inputManager.getLastMoveY();
+
+			// Render mouse position
+			OverlayUtil.renderTextLocation(graphics,
+				p,
+				"x: " + lastMoveX + " y: " + lastMoveY,
+				Color.YELLOW);
+
+			// Render hex color
+			if (robot != null)
+			{
+				Color color = robot.getPixelColor(MouseInfo.getPointerInfo().getLocation().x,
+					MouseInfo.getPointerInfo().getLocation().y);
+
+				OverlayUtil.renderTextLocation(graphics,
+					p2,
+					"hex: " + String.format("#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue()),
+					Color.YELLOW);
+			}
+		}
+	}
+
+	@Subscribe
+	private void onConfigButtonPressed(ConfigButtonClicked configButtonClicked)
+	{
+		if (!configButtonClicked.getGroup().equalsIgnoreCase("entityinspector"))
+		{
+			return;
+		}
+
+		if (configButtonClicked.getKey().equals("printStackTrace"))
+		{
+			for (Map.Entry <Thread, StackTraceElement []> entry:
+					Thread.getAllStackTraces().entrySet ())
+			{
+				System.out.println (entry.getKey ().getName () + ":");
+				for (StackTraceElement element: entry.getValue ())
+					System.out.println ("\t" + element);
+			}
 		}
 	}
 }
